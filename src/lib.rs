@@ -10,7 +10,7 @@ use nalgebra::{ComplexField, SMatrix, SMatrixView, Vector3};
 /// Also includes the capability to automatically
 /// collect good data points, using a `const`-sized
 /// buffer matrix, and a k-nearest neighbors
-pub struct MagCalibrator<const N: usize, const M: usize> {
+pub struct MagCalibrator<const N: usize> {
     matrix: SMatrix<f32, N, 6>,
     matrix_filled: usize,
     mean_distance: f32,
@@ -18,7 +18,7 @@ pub struct MagCalibrator<const N: usize, const M: usize> {
     k: usize,
 }
 
-impl<const N: usize, const M: usize> Default for MagCalibrator<N, M> {
+impl<const N: usize> Default for MagCalibrator<N> {
     fn default() -> Self {
         Self {
             matrix: SMatrix::from_element(1.0),
@@ -30,15 +30,20 @@ impl<const N: usize, const M: usize> Default for MagCalibrator<N, M> {
     }
 }
 
-impl<const N: usize, const M: usize> MagCalibrator<N, M> {
+impl<const N: usize> MagCalibrator<N> {
     /// Create a new calibrator
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create a new calibrator with a custom number of neighbors to check
-    pub fn new_define_k(k: usize) -> Self {
-        Self{ k, ..Default::default() }
+    /// Configure the number of `k` neighbors to calculate distance to
+    pub fn num_neighbors(self, k:usize) -> Self {
+        Self{k, ..self}
+    }
+
+    /// Configure sample pre scaler, prevents ill-conditioning
+    pub fn pre_scaler(self, pre_scaler:f32) -> Self {
+        Self{pre_scaler, ..self}
     }
 
     /// Calculates mean distance to the `k` nearest neighbors.
@@ -66,25 +71,25 @@ impl<const N: usize, const M: usize> MagCalibrator<N, M> {
     /// between all `N` row vectors in the internal buffer.
     /// A smaller number means a point is "similar" to its neighbors
     fn mean_distance_from_all(&self) -> [f32; N] {
-        let mut msd: [f32; N] = [0.; N];
+        let mut mean_dist: [f32; N] = [0.; N];
 
         let matrix_view: SMatrixView<f32, N, 3> = self.matrix.fixed_columns::<3>(0);
         matrix_view.row_iter().enumerate().for_each(|(i, row)| {
-            msd[i] = self.mean_distance_from_single(row.into());
+            mean_dist[i] = self.mean_distance_from_single(row.into());
         });
-        msd
+        mean_dist
     }
 
-    /// Returns index of vector that returns the lowest mean squared distance
+    /// Returns index of vector with the lowest squared distance
     /// Is used when replacing the least useful value in the array
     fn lowest_mean_distance_by_index(&mut self) -> (usize, f32) {
-        let msd = self.mean_distance_from_all();
+        let mean_dist = self.mean_distance_from_all();
 
-        // Set mean msd now that we are at it
-        self.mean_distance = msd.iter().rfold(0., |a, &b| a + b) / N as f32;
+        // Set mean distance now that we are at it
+        self.mean_distance = mean_dist.iter().rfold(0., |a, &b| a + b) / N as f32;
 
-        // Obtain index for lowest msd value
-        msd.iter()
+        // Obtain index for lowest mean distance
+        mean_dist.iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal))
             .map(|(index, value)| (index, *value))
@@ -105,9 +110,9 @@ impl<const N: usize, const M: usize> MagCalibrator<N, M> {
         }
         // Otherwise check which sample may be best to replace
         else {
-            let (low_index, low_msd) = self.lowest_mean_distance_by_index();
-            let sample_msd = self.mean_distance_from_single(x.transpose());
-            if low_msd < sample_msd {
+            let (low_index, low_mean_dist) = self.lowest_mean_distance_by_index();
+            let sample_mean_dist = self.mean_distance_from_single(x.transpose());
+            if low_mean_dist < sample_mean_dist {
                 self.add_sample_at(low_index, x);
             }
         }
@@ -115,19 +120,16 @@ impl<const N: usize, const M: usize> MagCalibrator<N, M> {
 
     /// Insert a sample vector into `index` row of buffer matrix
     fn add_sample_at(&mut self, index: usize, sample: Vector3<f32>) {
-        self.matrix[(index, 0)] = sample[0] / self.pre_scaler;
-        self.matrix[(index, 1)] = sample[1] / self.pre_scaler;
-        self.matrix[(index, 2)] = sample[2] / self.pre_scaler;
+        if index < N {
+            self.matrix[(index, 0)] = sample[0] / self.pre_scaler;
+            self.matrix[(index, 1)] = sample[1] / self.pre_scaler;
+            self.matrix[(index, 2)] = sample[2] / self.pre_scaler;
+        }
     }
 
     /// Get mean distance value between samples in matrix buffer
     pub fn mean_distane(&self) -> f32 {
         self.mean_distance
-    }
-
-    /// Set sample pre scaler, prevents ill-conditioning
-    pub fn set_pre_scaler(&mut self, scaler: f32) {
-        self.pre_scaler = scaler;
     }
 
     /// Try to calculate calibration offset and scale values. Returns None if
