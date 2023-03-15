@@ -128,7 +128,7 @@ impl<const N: usize> MagCalibrator<N> {
     }
 
     /// Get mean distance value between samples in matrix buffer
-    pub fn mean_distane(&self) -> f32 {
+    pub fn mean_distance(&self) -> f32 {
         self.mean_distance
     }
 
