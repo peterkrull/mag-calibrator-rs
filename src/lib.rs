@@ -51,7 +51,7 @@ impl<const N: usize> MagCalibrator<N> {
     fn mean_distance_from_single(&self, vec: SMatrix<f32, 1, 3>) -> f32 {
         let matrix_view: SMatrixView<f32, N, 3> = self.matrix.fixed_columns::<3>(0);
 
-        // Distane to every other point
+        // Distance to every other point
         let mut squared_dists: [f32; N] = [0.; N];
         matrix_view.row_iter().enumerate().for_each(|(j, cmp)| {
             let diff = vec - cmp;
@@ -101,9 +101,9 @@ impl<const N: usize> MagCalibrator<N> {
         self.evaluate_sample_vec(Vector3::from(x))
     }
 
-    /// Add a sample if it is deemed more usedful than the least useful sample
+    /// Add a sample if it is deemed more useful than the least useful sample
     pub fn evaluate_sample_vec(&mut self, x: Vector3<f32>) {
-        // Check if buffer is not yet "intialized" with real measurements
+        // Check if buffer is not yet "initialized" with real measurements
         if self.matrix_filled < N {
             self.add_sample_at(self.matrix_filled, x);
             self.matrix_filled += 1;
@@ -128,7 +128,7 @@ impl<const N: usize> MagCalibrator<N> {
     }
 
     /// Get mean distance value between samples in matrix buffer
-    pub fn mean_distance(&self) -> f32 {
+    pub fn get_mean_distance(&self) -> f32 {
         self.mean_distance
     }
 
