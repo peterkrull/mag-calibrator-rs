@@ -6,7 +6,7 @@ use nalgebra::{ComplexField, SMatrix, SMatrixView, Vector3};
 
 /// Lightweight least squares approach to
 /// determining the offset and scaling
-/// factors for gyroscope calibration.
+/// factors for magnetometer calibration.
 /// Also includes the capability to automatically
 /// collect good data points, using a `const`-sized
 /// buffer matrix, and a k-nearest neighbors
