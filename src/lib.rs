@@ -1,4 +1,3 @@
-#![feature(sort_floats)]
 #![no_std]
 
 // use core::cmp::Ordering;
@@ -9,7 +8,7 @@ use nalgebra::{ComplexField, SMatrix, SMatrixView, Vector3};
 /// factors for magnetometer calibration.
 /// Also includes the capability to automatically
 /// collect good data points, using a `const`-sized
-/// buffer matrix, and a k-nearest neighbors
+/// buffer matrix, and a k-nearest neighbors.
 pub struct MagCalibrator<const N: usize> {
     matrix: SMatrix<f32, N, 6>,
     matrix_filled: usize,
@@ -31,19 +30,20 @@ impl<const N: usize> Default for MagCalibrator<N> {
 }
 
 impl<const N: usize> MagCalibrator<N> {
-    /// Create a new calibrator
+    /// Create a new calibrator instance.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Configure the number of `k` neighbors to calculate distance to
-    pub fn num_neighbors(self, k:usize) -> Self {
-        Self{k, ..self}
+    /// Configure the number of `k` neighbors to calculate distance to.
+    pub fn num_neighbors(self, k: usize) -> Self {
+        Self { k, ..self }
     }
 
-    /// Configure sample pre scaler, prevents ill-conditioning
-    pub fn pre_scaler(self, pre_scaler:f32) -> Self {
-        Self{pre_scaler, ..self}
+    /// Configure sample pre scaler, prevents ill-conditioning if given
+    /// a value close to the expected magnitude of the magnetic field strength.
+    pub fn pre_scaler(self, pre_scaler: f32) -> Self {
+        Self { pre_scaler, ..self }
     }
 
     /// Calculates mean distance to the `k` nearest neighbors.
@@ -59,7 +59,7 @@ impl<const N: usize> MagCalibrator<N> {
         });
 
         // Sort floats and return mean distance to nearest neighbors
-        squared_dists.sort_floats();
+        squared_dists.sort_unstable_by(|a, b| a.total_cmp(b));
         squared_dists
             .iter()
             .take(self.k + 1)
@@ -69,7 +69,7 @@ impl<const N: usize> MagCalibrator<N> {
 
     /// Calculates mean squared distance to the `k` nearest neighbors
     /// between all `N` row vectors in the internal buffer.
-    /// A smaller number means a point is "similar" to its neighbors
+    /// A smaller number means a point is "similar" to its neighbors.
     fn mean_distance_from_all(&self) -> [f32; N] {
         let mut mean_dist: [f32; N] = [0.; N];
 
@@ -81,7 +81,7 @@ impl<const N: usize> MagCalibrator<N> {
     }
 
     /// Returns index of vector with the lowest squared distance
-    /// Is used when replacing the least useful value in the array
+    /// Is used when replacing the least useful value in the array.
     fn lowest_mean_distance_by_index(&mut self) -> (usize, f32) {
         let mean_dist = self.mean_distance_from_all();
 
@@ -89,9 +89,10 @@ impl<const N: usize> MagCalibrator<N> {
         self.mean_distance = mean_dist.iter().rfold(0., |a, &b| a + b) / N as f32;
 
         // Obtain index for lowest mean distance
-        mean_dist.iter()
+        mean_dist
+            .iter()
             .enumerate()
-            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal))
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(index, value)| (index, *value))
             .unwrap()
     }
@@ -101,8 +102,12 @@ impl<const N: usize> MagCalibrator<N> {
         self.evaluate_sample_vec(Vector3::from(x))
     }
 
-    /// Add a sample if it is deemed more useful than the least useful sample
+    /// Add a sample if it is deemed more useful than the least useful sample.
     pub fn evaluate_sample_vec(&mut self, x: Vector3<f32>) {
+        // Ensure all entries are normal (not Inf or NaN)
+        if !x.iter().all(|e| e.is_normal()) {
+            return;
+        }
         // Check if buffer is not yet "initialized" with real measurements
         if self.matrix_filled < N {
             self.add_sample_at(self.matrix_filled, x);
@@ -118,7 +123,7 @@ impl<const N: usize> MagCalibrator<N> {
         }
     }
 
-    /// Insert a sample vector into `index` row of buffer matrix
+    /// Insert a sample vector into `index` row of buffer matrix.
     fn add_sample_at(&mut self, index: usize, sample: Vector3<f32>) {
         if index < N {
             self.matrix[(index, 0)] = sample[0] / self.pre_scaler;
@@ -127,14 +132,15 @@ impl<const N: usize> MagCalibrator<N> {
         }
     }
 
-    /// Get mean distance value between samples in matrix buffer
+    /// Get mean distance value between samples in matrix buffer.
     pub fn get_mean_distance(&self) -> f32 {
         self.mean_distance
     }
 
     /// Try to calculate calibration offset and scale values. Returns None if
     /// it was not possible to calculate the pseudo inverse, or if some of the
-    /// parameters are `NaN`. The tuple contains (offset , scale)
+    /// parameters are `NaN`. In that case it would be best to restart the whole
+    /// calibration and collect new samples. The tuple contains (offset , scale).
     pub fn perform_calibration(&mut self) -> Option<([f32; 3], [f32; 3])> {
         // Calculate column 4 and 5 of H matrix
         self.matrix.row_iter_mut().for_each(|mut mag| {
@@ -166,6 +172,6 @@ impl<const N: usize> MagCalibrator<N> {
         }
 
         // TODO Add option for low-pass filtering this result
-        Some((off,scale))
+        Some((off, scale))
     }
 }
